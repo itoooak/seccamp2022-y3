@@ -7,18 +7,43 @@ import (
 	"github.com/oklog/ulid/v2"
 )
 
-type WorkerStateDiff struct {
-	Id ulid.ULID
+type WorkerValueDiff struct {
+	Id       ulid.ULID
 	Operator StateUpdateOperator
-	Operand int
+	Operand  int
 }
 
+type NodeState int
+
+const (
+	Leader    = 0
+	Follower  = 1
+	Candidate = 2
+)
+
 type WorkerState struct {
-	Diffs []WorkerStateDiff
+	Diffs  []WorkerValueDiff
+	Leader string
+	Term   uint
+	State  NodeState
+	Voted  map[uint]bool
 }
 
 func InitState(w *Worker) WorkerState {
-	return WorkerState{}
+	return WorkerState{
+		Diffs:  []WorkerValueDiff{},
+		Leader: w.name,
+		Term:   0,
+		State:  Follower,
+		Voted: map[uint]bool{},
+	}
+}
+
+func InitChannels(w *Worker) ConnChannels {
+	return ConnChannels{
+		Heartbeat: make(chan HeartbeatMessage),
+		Vote:      make(chan VoteMessage, 10),
+	}
 }
 
 func CalcValue(s *WorkerState) int {

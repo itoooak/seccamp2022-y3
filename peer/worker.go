@@ -13,11 +13,28 @@ type Worker struct {
 	name string
 	node *Node
 
-	leader string
-
 	mu sync.Mutex
 
-	State WorkerState
+	Channels ConnChannels
+	State    WorkerState
+}
+
+type ConnChannels struct {
+	Heartbeat chan HeartbeatMessage
+	Vote      chan VoteMessage
+}
+
+type HeartbeatMessage struct {
+	From string
+	To   string
+	Term uint
+}
+
+type VoteMessage struct {
+	Approve bool
+	From    string
+	To      string
+	Term    uint
 }
 
 type WorkerOption func(*Worker)
@@ -26,7 +43,7 @@ func NewWorker(name string) *Worker {
 	w := new(Worker)
 	w.name = name
 	w.State = InitState(w)
-	w.leader = name
+	w.Channels = InitChannels(w)
 	return w
 }
 
@@ -61,9 +78,6 @@ func (w *Worker) Connect(name, addr string) (err error) {
 	if err != nil {
 		return err
 	}
-	if w.leader > name {
-		w.leader = name
-	}
 	var reply RequestConnectReply
 	err = w.RemoteCall(name, "Worker.RequestConnect", RequestConnectArgs{w.name, w.node.Addr()}, &reply)
 	if err != nil {
@@ -83,8 +97,8 @@ func (w *Worker) Connect(name, addr string) (err error) {
 }
 
 func (w *Worker) Stop() {
-    w.node.Shutdown()
-    w.node = nil
+	w.node.Shutdown()
+	w.node = nil
 }
 
 func (w *Worker) RemoteCall(name, method string, args any, reply any) error {
@@ -101,8 +115,8 @@ type RequestConnectArgs struct {
 }
 
 type RequestConnectReply struct {
-	OK bool
-	Peers    map[string]string
+	OK    bool
+	Peers map[string]string
 }
 
 func (w *Worker) RequestConnect(args RequestConnectArgs, reply *RequestConnectReply) error {
@@ -116,25 +130,25 @@ func (w *Worker) RequestConnect(args RequestConnectArgs, reply *RequestConnectRe
 	}
 	reply.OK = true
 	for name, addr := range w.node.ConnectedNodes() {
-        reply.Peers[name] = addr
+		reply.Peers[name] = addr
 	}
 	return nil
 }
 
-type RequestConnectedPeersArgs struct {}
+type RequestConnectedPeersArgs struct{}
 
 type RequestConnectedPeersReply struct {
-    Peers map[string]string
+	Peers map[string]string
 }
 
 func (w *Worker) RequestConnectedPeers(args RequestConnectedPeersArgs, reply *RequestConnectedPeersReply) error {
-    w.LockMutex()
-    defer w.UnlockMutex()
-    reply.Peers = make(map[string]string)
-    for k, v := range w.ConnectedPeers() {
-        reply.Peers[k] = v
-    }
-    return nil
+	w.LockMutex()
+	defer w.UnlockMutex()
+	reply.Peers = make(map[string]string)
+	for k, v := range w.ConnectedPeers() {
+		reply.Peers[k] = v
+	}
+	return nil
 }
 
 type StateUpdateOperator string
@@ -145,15 +159,15 @@ const (
 )
 
 type RequestStateUpdateArgs struct {
-	Id ulid.ULID
+	Id       ulid.ULID
 	Operator StateUpdateOperator
-	Operand int
+	Operand  int
 }
 
 type RequestStateUpdateReply struct {
-	OK bool
+	OK     bool
 	Before int
-	After int
+	After  int
 }
 
 /*
@@ -166,12 +180,12 @@ func (w *Worker) RequestStateUpdate(args RequestStateUpdateArgs, reply *RequestS
 	}
 
 	reply.Before = CalcValue(&w.State)
-	
+
 	switch args.Operator {
 	case "ADD":
-		w.State.Diffs = append(w.State.Diffs, WorkerStateDiff{Id: args.Id, PeerName: w.name, Operator: "ADD", Operand: args.Operand})
+		w.State.Diffs = append(w.State.Diffs, WorkerValueDiff{Id: args.Id, PeerName: w.name, Operator: "ADD", Operand: args.Operand})
 	case "MUL":
-		w.State.Diffs = append(w.State.Diffs, WorkerStateDiff{Id: args.Id, PeerName: w.name, Operator: "MUL", Operand: args.Operand})
+		w.State.Diffs = append(w.State.Diffs, WorkerValueDiff{Id: args.Id, PeerName: w.name, Operator: "MUL", Operand: args.Operand})
 	default:
 		reply.OK = false
 		return fmt.Errorf("unknown operator")
@@ -204,12 +218,12 @@ func (w *Worker) RequestStateUpdate(args RequestStateUpdateArgs, reply *RequestS
 	}
 
 	reply.Before = CalcValue(&w.State)
-	
+
 	switch args.Operator {
 	case "ADD":
-		w.State.Diffs = append(w.State.Diffs, WorkerStateDiff{Id: args.Id, Operator: "ADD", Operand: args.Operand})
+		w.State.Diffs = append(w.State.Diffs, WorkerValueDiff{Id: args.Id, Operator: "ADD", Operand: args.Operand})
 	case "MUL":
-		w.State.Diffs = append(w.State.Diffs, WorkerStateDiff{Id: args.Id, Operator: "MUL", Operand: args.Operand})
+		w.State.Diffs = append(w.State.Diffs, WorkerValueDiff{Id: args.Id, Operator: "MUL", Operand: args.Operand})
 	default:
 		reply.OK = false
 		return fmt.Errorf("unknown operator")
@@ -238,7 +252,7 @@ func (w *Worker) RequestStateUpdate(args RequestStateUpdateArgs, reply *RequestS
 	return nil
 }
 
-func (w *Worker)RequestStateUpdateWithoutSync(args RequestStateUpdateArgs, reply *RequestStateUpdateReply) error {
+func (w *Worker) RequestStateUpdateWithoutSync(args RequestStateUpdateArgs, reply *RequestStateUpdateReply) error {
 	w.LockMutex()
 	defer w.UnlockMutex()
 
@@ -249,12 +263,12 @@ func (w *Worker)RequestStateUpdateWithoutSync(args RequestStateUpdateArgs, reply
 	}
 
 	reply.Before = CalcValue(&w.State)
-	
+
 	switch args.Operator {
 	case "ADD":
-		w.State.Diffs = append(w.State.Diffs, WorkerStateDiff{Id: args.Id, Operator: "ADD", Operand: args.Operand})
+		w.State.Diffs = append(w.State.Diffs, WorkerValueDiff{Id: args.Id, Operator: "ADD", Operand: args.Operand})
 	case "MUL":
-		w.State.Diffs = append(w.State.Diffs, WorkerStateDiff{Id: args.Id, Operator: "MUL", Operand: args.Operand})
+		w.State.Diffs = append(w.State.Diffs, WorkerValueDiff{Id: args.Id, Operator: "MUL", Operand: args.Operand})
 	default:
 		reply.OK = false
 		return fmt.Errorf("unknown operator")
@@ -268,10 +282,10 @@ func (w *Worker)RequestStateUpdateWithoutSync(args RequestStateUpdateArgs, reply
 	return nil
 }
 
-type RequestDiffsArgs struct {}
+type RequestDiffsArgs struct{}
 
 type RequestDiffsReply struct {
-	Diffs []WorkerStateDiff
+	Diffs []WorkerValueDiff
 }
 
 func (w *Worker) RequestDiffs(args RequestDiffsArgs, reply *RequestDiffsReply) error {
@@ -285,16 +299,58 @@ func (w *Worker) RequestDiffs(args RequestDiffsArgs, reply *RequestDiffsReply) e
 	return nil
 }
 
-type RequestLeaderArgs struct {}
+type RequestLeaderArgs struct{}
 
 type RequestLeaderReply struct {
-    Leader string
+	Leader string
 }
 
 func (w *Worker) RequestLeader(args RequestLeaderArgs, reply *RequestLeaderReply) error {
-    w.LockMutex()
-    defer w.UnlockMutex()
+	w.LockMutex()
+	defer w.UnlockMutex()
 
-    reply.Leader = w.leader
-    return nil
+	reply.Leader = w.State.Leader
+	return nil
+}
+
+type RequestHeartbeatArgs struct {
+	From string
+	Term uint
+}
+
+type RequestHeartbeatReply struct {}
+
+func (w *Worker) RequestHeartbeat(args RequestHeartbeatArgs, reply *RequestHeartbeatReply) error {
+	w.LockMutex()
+	defer w.UnlockMutex()
+
+	w.Channels.Heartbeat <- HeartbeatMessage{From: args.From, To: w.name, Term: args.Term}
+	return nil
+}
+
+type RequestVoteArgs struct {
+	From string
+	Term uint
+}
+
+type RequestVoteReply struct {
+	Message VoteMessage
+}
+
+func (w *Worker) RequestVote(args RequestVoteArgs, reply *RequestVoteReply) error {
+	w.LockMutex()
+	defer w.UnlockMutex()
+
+	if w.State.Voted[args.Term] || w.State.Term > args.Term {
+		reply = &RequestVoteReply{VoteMessage{Approve: false, From: w.name, To: args.From, Term: args.Term}}
+		return nil
+	}
+
+	w.State.Leader = args.From
+	w.State.Term = args.Term
+	log.Printf("follow %s in term %d", w.State.Leader, w.State.Term)
+	w.State.Voted[args.Term] = true
+
+	reply = &RequestVoteReply{VoteMessage{Approve: true, From: w.name, To: args.From, Term: args.Term}}
+	return nil
 }

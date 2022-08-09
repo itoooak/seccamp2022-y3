@@ -36,12 +36,12 @@ func main() {
 		scanner.Scan()
 		input := scanner.Text()
 		command := parse(input)
-        result, err := command.Exec()
-        if err != nil {
-            fmt.Printf("> [ERRPR] %s\n", err)
-        } else {
-            fmt.Println("> ", result)
-        }
+		result, err := command.Exec()
+		if err != nil {
+			fmt.Printf("> [ERRPR] %s\n", err)
+		} else {
+			fmt.Println("> ", result)
+		}
 	}
 }
 
@@ -73,13 +73,13 @@ func send_rpc(peer, method string, args any, reply any) error {
 
 type Command struct {
 	operation string
-	args  []string
+	args      []string
 }
 
 func (c *Command) Exec() (string, error) {
-    switch c.operation {
-    case "state":
-        return State(c.args[0])
+	switch c.operation {
+	case "state":
+		return State(c.args[0])
 	case "listpeer":
 		return ListPeer(c.args[0])
 	case "stateupdate":
@@ -88,18 +88,18 @@ func (c *Command) Exec() (string, error) {
 		return ListDiff(c.args[0])
 	case "leader":
 		return Leader(c.args[0])
-    default:
-        return "", fmt.Errorf("No such command")
-    }
+	default:
+		return "", fmt.Errorf("No such command")
+	}
 }
 
 func State(name string) (string, error) {
-    var reply peer.RequestStateReply
-    err := send_rpc(name, "Worker.RequestState", peer.RequestStateArgs{}, &reply)
-    if err != nil {
-        return "", err
-    }
-    return reply.State.String(), nil
+	var reply peer.RequestStateReply
+	err := send_rpc(name, "Worker.RequestState", peer.RequestStateArgs{}, &reply)
+	if err != nil {
+		return "", err
+	}
+	return reply.State.String(), nil
 }
 
 func ListPeer(name string) (string, error) {
@@ -119,7 +119,7 @@ func StateUpdate(name string, operator string, operand string) (string, error) {
 	}
 
 	err2 := send_rpc(name, "Worker.RequestStateUpdate",
-						peer.RequestStateUpdateArgs{Id: ulid.Make(), Operator: peer.StateUpdateOperator(operator), Operand: operandInt}, &reply)
+		peer.RequestStateUpdateArgs{Id: ulid.Make(), Operator: peer.StateUpdateOperator(operator), Operand: operandInt}, &reply)
 	if err2 != nil {
 		return "", err2
 	}
@@ -136,10 +136,10 @@ func ListDiff(name string) (string, error) {
 }
 
 func Leader(name string) (string, error) {
-    var reply peer.RequestLeaderReply
-    err := send_rpc(name, "Worker.RequestLeader", peer.RequestLeaderReply{}, &reply)
-    if err != nil {
-        return "", err
-    }
-    return reply.Leader, nil
+	var reply peer.RequestLeaderReply
+	err := send_rpc(name, "Worker.RequestLeader", peer.RequestLeaderReply{}, &reply)
+	if err != nil {
+		return "", err
+	}
+	return reply.Leader, nil
 }
