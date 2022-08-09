@@ -13,6 +13,8 @@ type Worker struct {
 	name string
 	node *Node
 
+	leader string
+
 	mu sync.Mutex
 
 	State WorkerState
@@ -24,6 +26,7 @@ func NewWorker(name string) *Worker {
 	w := new(Worker)
 	w.name = name
 	w.State = InitState(w)
+	w.leader = name
 	return w
 }
 
@@ -57,6 +60,9 @@ func (w *Worker) Connect(name, addr string) (err error) {
 	err = w.node.Connect(name, addr)
 	if err != nil {
 		return err
+	}
+	if w.leader > name {
+		w.leader = name
 	}
 	var reply RequestConnectReply
 	err = w.RemoteCall(name, "Worker.RequestConnect", RequestConnectArgs{w.name, w.node.Addr()}, &reply)
@@ -277,4 +283,18 @@ func (w *Worker) RequestDiffs(args RequestDiffsArgs, reply *RequestDiffsReply) e
 	log.Printf("%#v\n", reply)
 
 	return nil
+}
+
+type RequestLeaderArgs struct {}
+
+type RequestLeaderReply struct {
+    Leader string
+}
+
+func (w *Worker) RequestLeader(args RequestLeaderArgs, reply *RequestLeaderReply) error {
+    w.LockMutex()
+    defer w.UnlockMutex()
+
+    reply.Leader = w.leader
+    return nil
 }

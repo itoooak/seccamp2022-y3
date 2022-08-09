@@ -21,6 +21,7 @@ type Node struct {
 	listener net.Listener
 	server   *rpc.Server
 	peers    map[string]*ConnectedNode
+	// leader string
 
 	mu sync.Mutex
 	wg sync.WaitGroup

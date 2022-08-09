@@ -86,6 +86,8 @@ func (c *Command) Exec() (string, error) {
 		return StateUpdate(c.args[0], c.args[1], c.args[2])
 	case "listdiff":
 		return ListDiff(c.args[0])
+	case "leader":
+		return Leader(c.args[0])
     default:
         return "", fmt.Errorf("No such command")
     }
@@ -131,4 +133,13 @@ func ListDiff(name string) (string, error) {
 		return "", err
 	}
 	return fmt.Sprintf("%#v", reply.Diffs), nil
+}
+
+func Leader(name string) (string, error) {
+    var reply peer.RequestLeaderReply
+    err := send_rpc(name, "Worker.RequestLeader", peer.RequestLeaderReply{}, &reply)
+    if err != nil {
+        return "", err
+    }
+    return reply.Leader, nil
 }
