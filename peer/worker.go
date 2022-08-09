@@ -223,7 +223,7 @@ func (w *Worker) RequestStateUpdate(args RequestStateUpdateArgs, reply *RequestS
 		log.Printf("connect %s", peer)
 		wg.Add(1)
 		go func(peer string) {
-			w.RemoteCall(peer, "Worker.requestStateUpdateWithoutSync", args, r)
+			w.RemoteCall(peer, "Worker.RequestStateUpdateWithoutSync", args, r)
 			wg.Done()
 		}(peer)
 	}
@@ -232,7 +232,7 @@ func (w *Worker) RequestStateUpdate(args RequestStateUpdateArgs, reply *RequestS
 	return nil
 }
 
-func (w *Worker)requestStateUpdateWithoutSync(args RequestStateUpdateArgs, reply *RequestStateUpdateReply) error {
+func (w *Worker)RequestStateUpdateWithoutSync(args RequestStateUpdateArgs, reply *RequestStateUpdateReply) error {
 	w.LockMutex()
 	defer w.UnlockMutex()
 
