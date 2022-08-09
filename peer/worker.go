@@ -318,7 +318,7 @@ type RequestHeartbeatArgs struct {
 	Term uint
 }
 
-type RequestHeartbeatReply struct {}
+type RequestHeartbeatReply struct{}
 
 func (w *Worker) RequestHeartbeat(args RequestHeartbeatArgs, reply *RequestHeartbeatReply) error {
 	w.LockMutex()

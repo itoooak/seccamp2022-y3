@@ -35,7 +35,7 @@ func InitState(w *Worker) WorkerState {
 		Leader: w.name,
 		Term:   0,
 		State:  Follower,
-		Voted: map[uint]bool{},
+		Voted:  map[uint]bool{},
 	}
 }
 

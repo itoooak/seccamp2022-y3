@@ -97,16 +97,16 @@ func leader(w *peer.Worker) {
 }
 
 func follower(w *peer.Worker) {
-    HeartbeatWaitLimit := time.Duration(w.Rand().ExpFloat64() / HEARTBEAT_WAITLIMIT_BASE) * time.Second
+	HeartbeatWaitLimit := time.Duration(w.Rand().ExpFloat64()/HEARTBEAT_WAITLIMIT_BASE) * time.Second
 	for {
-        select {
-        case <-w.Channels.Heartbeat:
-            return
-        case <-time.After(HeartbeatWaitLimit * time.Second):
-            w.State.State = peer.Candidate
+		select {
+		case <-w.Channels.Heartbeat:
 			return
-        }
-    }
+		case <-time.After(HeartbeatWaitLimit * time.Second):
+			w.State.State = peer.Candidate
+			return
+		}
+	}
 }
 
 func candidate(w *peer.Worker) {
@@ -124,7 +124,7 @@ func candidate(w *peer.Worker) {
 		var reply peer.RequestVoteReply
 		go func() {
 			w.RemoteCall(dest, "Worker.RequestVote",
-							peer.RequestVoteArgs{From: w.Name(), Term: w.State.Term}, &reply)
+				peer.RequestVoteArgs{From: w.Name(), Term: w.State.Term}, &reply)
 			approvalCounter.Lock()
 			defer approvalCounter.Unlock()
 			approvalCounter.counter += 1
@@ -135,8 +135,8 @@ func candidate(w *peer.Worker) {
 	select {
 	case <-time.After(VOTE_WAITLIMIT):
 		approvalCounter.Lock()
-		
-		if approvalCounter.counter * 2 > nodeNum {
+
+		if approvalCounter.counter*2 > nodeNum {
 			w.State.State = peer.Leader
 			log.Printf("leader in term %d", w.State.Term)
 		}
