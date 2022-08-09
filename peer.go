@@ -70,7 +70,7 @@ func main() {
 		case peer.Candidate:
 			candidate(worker)
 		default:
-			panic("invalid state")
+			log.Fatal("invalid state")
 		}
 	}
 }
@@ -80,6 +80,7 @@ func leader(w *peer.Worker) {
 		select {
 		case m := <-w.Channels.Heartbeat:
 			if w.State.Term < m.Term {
+				log.Printf("listen heartbeat from newer leader")
 				w.State.State = peer.Follower
 				w.State.Leader = m.From
 				w.State.Term = m.Term
@@ -87,6 +88,7 @@ func leader(w *peer.Worker) {
 				return
 			}
 		case <-time.After(HEARTBEAT_INTERVAL * time.Second):
+			log.Printf("heartbeat")
 			for dest, _ := range w.ConnectedPeers() {
 				var reply peer.RequestHeartbeatReply
 				w.RemoteCall(dest, "Worker.RequestHeartbeat",
@@ -101,8 +103,9 @@ func follower(w *peer.Worker) {
 	for {
 		select {
 		case <-w.Channels.Heartbeat:
-			return
+			time.Sleep(10 * time.Millisecond)
 		case <-time.After(HeartbeatWaitLimit * time.Second):
+			log.Printf("no heartbeat")
 			w.State.State = peer.Candidate
 			return
 		}
@@ -121,19 +124,21 @@ func candidate(w *peer.Worker) {
 	}
 
 	for dest, _ := range w.ConnectedPeers() {
-		var reply peer.RequestVoteReply
 		go func() {
+			var reply peer.RequestVoteReply
 			w.RemoteCall(dest, "Worker.RequestVote",
 				peer.RequestVoteArgs{From: w.Name(), Term: w.State.Term}, &reply)
-			approvalCounter.Lock()
-			defer approvalCounter.Unlock()
-			approvalCounter.counter += 1
+			if reply.Message.Approve {
+				approvalCounter.Lock()
+				approvalCounter.counter += 1
+				approvalCounter.Unlock()
+			}
 		}()
 		nodeNum += 1
 	}
 
 	select {
-	case <-time.After(VOTE_WAITLIMIT):
+	case <-time.After(VOTE_WAITLIMIT * time.Second):
 		approvalCounter.Lock()
 
 		if approvalCounter.counter*2 > nodeNum {
