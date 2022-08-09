@@ -91,8 +91,11 @@ func leader(w *peer.Worker) {
 			log.Printf("heartbeat")
 			for dest, _ := range w.ConnectedPeers() {
 				var reply peer.RequestHeartbeatReply
-				w.RemoteCall(dest, "Worker.RequestHeartbeat",
+				err := w.RemoteCall(dest, "Worker.RequestHeartbeat",
 					peer.RequestHeartbeatArgs{From: w.Name(), Term: w.State.Term}, &reply)
+				if err != nil {
+					log.Fatal(err)
+				}
 			}
 		}
 	}
@@ -126,8 +129,11 @@ func candidate(w *peer.Worker) {
 	for dest, _ := range w.ConnectedPeers() {
 		go func() {
 			var reply peer.RequestVoteReply
-			w.RemoteCall(dest, "Worker.RequestVote",
+			err := w.RemoteCall(dest, "Worker.RequestVote",
 				peer.RequestVoteArgs{From: w.Name(), Term: w.State.Term}, &reply)
+			if err != nil {
+				log.Fatal(err)
+			}
 			if reply.Message.Approve {
 				approvalCounter.Lock()
 				approvalCounter.counter += 1

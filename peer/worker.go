@@ -243,7 +243,10 @@ func (w *Worker) RequestStateUpdate(args RequestStateUpdateArgs, reply *RequestS
 		log.Printf("connect %s", peer)
 		wg.Add(1)
 		go func(peer string) {
-			w.RemoteCall(peer, "Worker.RequestStateUpdateWithoutSync", args, r)
+			err := w.RemoteCall(peer, "Worker.RequestStateUpdateWithoutSync", args, r)
+			if err != nil {
+				log.Fatal(err)
+			}
 			wg.Done()
 		}(peer)
 	}
