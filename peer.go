@@ -14,9 +14,10 @@ import (
 )
 
 const (
-	HEARTBEAT_INTERVAL       = 1
-	HEARTBEAT_WAITLIMIT_BASE = 5
-	VOTE_WAITLIMIT           = 5
+	// Millisecond
+	HEARTBEAT_INTERVAL       = 1000
+	HEARTBEAT_WAITLIMIT_BASE = 5000
+	VOTE_WAITLIMIT           = 5000
 )
 
 func main() {
@@ -89,7 +90,7 @@ func leader(w *peer.Worker) {
 	}
 
 	for w.State.State == peer.Leader {
-		heartbeatClock := time.After(HEARTBEAT_INTERVAL * time.Second)
+		heartbeatClock := time.After(HEARTBEAT_INTERVAL * time.Millisecond)
 		select {
 		case m := <-w.Channels.Heartbeat:
 			if currentTerm < m.Term {
@@ -121,7 +122,7 @@ func leader(w *peer.Worker) {
 }
 
 func follower(w *peer.Worker) {
-	HeartbeatWaitLimit := time.Duration(w.Rand().ExpFloat64()/HEARTBEAT_WAITLIMIT_BASE) * time.Second
+	HeartbeatWaitLimit := time.Duration(w.Rand().ExpFloat64()/HEARTBEAT_WAITLIMIT_BASE) * time.Millisecond
 	w.LockMutex()
 	currentTerm := w.State.Term
 	currentLeader := w.State.Leader
@@ -129,7 +130,7 @@ func follower(w *peer.Worker) {
 
 	if w.State.Voted[currentTerm] {
 		for w.State.Term == currentTerm && w.State.Leader == currentLeader {
-			leaderSelectionWaitLimit := HeartbeatWaitLimit + VOTE_WAITLIMIT * time.Second
+			leaderSelectionWaitLimit := HeartbeatWaitLimit + VOTE_WAITLIMIT*time.Millisecond
 			leaderSelectionWaitClock := time.After(leaderSelectionWaitLimit)
 			select {
 			case m := <-w.Channels.Heartbeat:
@@ -177,7 +178,7 @@ func follower(w *peer.Worker) {
 					log.Printf("follow %s in term %d", w.State.Leader, w.State.Term)
 					return
 				}
-			case <-time.After(HeartbeatWaitLimit * time.Second):
+			case <-time.After(HeartbeatWaitLimit * time.Millisecond):
 				log.Printf("no heartbeat")
 				w.State.State = peer.Candidate
 				return
@@ -226,7 +227,7 @@ func candidate(w *peer.Worker) {
 		nodeNum += 1
 	}
 
-	voteWaitClock := time.After(VOTE_WAITLIMIT * time.Second)
+	voteWaitClock := time.After(VOTE_WAITLIMIT * time.Millisecond)
 
 	for {
 		empty := false
