@@ -189,7 +189,7 @@ func candidate(w *peer.Worker) {
 			log.Printf("request %s to vote in term %d", dest, currentTerm)
 			var reply peer.RequestVoteReply
 			err := w.RemoteCall(dest, "Worker.RequestVote",
-				peer.RequestVoteArgs{From: w.Name(), Term: w.State.Term}, &reply)
+				peer.RequestVoteArgs{From: w.Name(), Term: currentTerm}, &reply)
 			if err != nil {
 				log.Fatal(err)
 			}
@@ -198,7 +198,10 @@ func candidate(w *peer.Worker) {
 				approvalCounter.counter += 1
 				approvalCounter.Unlock()
 				log.Printf("voted by %s in term %d", dest, currentTerm)
+			} else {
+				log.Printf("refused by %s in term %d", dest, currentTerm)
 			}
+			log.Printf("%#v", reply)
 		}(dest)
 		nodeNum += 1
 	}

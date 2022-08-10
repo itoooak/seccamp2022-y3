@@ -342,18 +342,22 @@ type RequestVoteReply struct {
 
 func (w *Worker) RequestVote(args RequestVoteArgs, reply *RequestVoteReply) error {
 	w.LockMutex()
-	defer w.UnlockMutex()
+	currentTerm := w.State.Term
+	voted := w.State.Voted[currentTerm]
+	w.UnlockMutex()
 
-	if w.State.Voted[args.Term] || w.State.Term > args.Term {
+	if voted || currentTerm > args.Term {
 		reply = &RequestVoteReply{VoteMessage{Approve: false, From: w.name, To: args.From, Term: args.Term}}
 		return nil
 	}
 
+	w.LockMutex()
 	w.State.State = Follower
 	w.State.Leader = args.From
 	w.State.Term = args.Term
 	log.Printf("vote %s in term %d", w.State.Leader, w.State.Term)
 	w.State.Voted[args.Term] = true
+	w.UnlockMutex()
 
 	reply = &RequestVoteReply{VoteMessage{Approve: true, From: w.name, To: args.From, Term: args.Term}}
 	return nil
