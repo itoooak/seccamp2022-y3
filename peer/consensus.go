@@ -41,7 +41,7 @@ func InitState(w *Worker) WorkerState {
 
 func InitChannels(w *Worker) ConnChannels {
 	return ConnChannels{
-		Heartbeat: make(chan HeartbeatMessage),
+		Heartbeat: make(chan HeartbeatMessage, 10),
 		Vote:      make(chan VoteMessage, 10),
 	}
 }

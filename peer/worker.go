@@ -349,9 +349,10 @@ func (w *Worker) RequestVote(args RequestVoteArgs, reply *RequestVoteReply) erro
 		return nil
 	}
 
+	w.State.State = Follower
 	w.State.Leader = args.From
 	w.State.Term = args.Term
-	log.Printf("follow %s in term %d", w.State.Leader, w.State.Term)
+	log.Printf("vote %s in term %d", w.State.Leader, w.State.Term)
 	w.State.Voted[args.Term] = true
 
 	reply = &RequestVoteReply{VoteMessage{Approve: true, From: w.name, To: args.From, Term: args.Term}}

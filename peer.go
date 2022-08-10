@@ -15,8 +15,8 @@ import (
 
 const (
 	HEARTBEAT_INTERVAL       = 1
-	HEARTBEAT_WAITLIMIT_BASE = 3
-	VOTE_WAITLIMIT           = 2
+	HEARTBEAT_WAITLIMIT_BASE = 5
+	VOTE_WAITLIMIT           = 5
 )
 
 func main() {
@@ -76,19 +76,34 @@ func main() {
 }
 
 func leader(w *peer.Worker) {
-	for {
+	currentTerm := w.State.Term
+	// 最初にHeartbeat
+	log.Printf("heartbeat in term %d", currentTerm)
+	for dest, _ := range w.ConnectedPeers() {
+		var reply peer.RequestHeartbeatReply
+		err := w.RemoteCall(dest, "Worker.RequestHeartbeat",
+			peer.RequestHeartbeatArgs{From: w.Name(), Term: w.State.Term}, &reply)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+
+	for w.State.State == peer.Leader {
+		heartbeatClock := time.After(HEARTBEAT_INTERVAL * time.Second)
 		select {
 		case m := <-w.Channels.Heartbeat:
 			if w.State.Term < m.Term {
-				log.Printf("listen heartbeat from newer leader")
+				w.LockMutex()
 				w.State.State = peer.Follower
 				w.State.Leader = m.From
 				w.State.Term = m.Term
+				w.UnlockMutex()
+				log.Printf("listen heartbeat from newer leader %s in term %d", w.State.Leader, w.State.Term)
 				log.Printf("follow %s in term %d", w.State.Leader, w.State.Term)
 				return
 			}
-		case <-time.After(HEARTBEAT_INTERVAL * time.Second):
-			log.Printf("heartbeat")
+		case <-heartbeatClock:
+			log.Printf("heartbeat in term %d", currentTerm)
 			for dest, _ := range w.ConnectedPeers() {
 				var reply peer.RequestHeartbeatReply
 				err := w.RemoteCall(dest, "Worker.RequestHeartbeat",
@@ -103,10 +118,48 @@ func leader(w *peer.Worker) {
 
 func follower(w *peer.Worker) {
 	HeartbeatWaitLimit := time.Duration(w.Rand().ExpFloat64()/HEARTBEAT_WAITLIMIT_BASE) * time.Second
-	for {
+	w.LockMutex()
+	currentTerm := w.State.Term
+	currentLeader := w.State.Leader
+	w.UnlockMutex()
+
+	if w.State.Voted[currentTerm] {
+		for w.State.Term == currentTerm && w.State.Leader == currentLeader {
+			select {
+			case m := <-w.Channels.Heartbeat:
+				if w.State.Term < m.Term {
+					w.LockMutex()
+					w.State.Term = m.Term
+					w.State.Leader = m.From
+					w.UnlockMutex()
+					log.Printf("follow %s in term %d", w.State.Leader, w.State.Term)
+					return
+				} else if w.State.Term == m.Term && w.State.Leader != m.From {
+					w.LockMutex()
+					w.State.Leader = m.From
+					w.UnlockMutex()
+					log.Printf("follow %s in term %d", w.State.Leader, w.State.Term)
+					return
+				}
+			}
+		}
+		return
+	}
+
+	for !w.State.Voted[currentTerm] {
 		select {
-		case <-w.Channels.Heartbeat:
-			time.Sleep(10 * time.Millisecond)
+		// TODO: この中のロジックが間違っていそう
+		case m := <-w.Channels.Heartbeat:
+			if w.State.Term == m.Term {
+				break
+			} else if w.State.Term < m.Term {
+				w.LockMutex()
+				w.State.Term = m.Term
+				w.State.Leader = m.From
+				w.UnlockMutex()
+				log.Printf("follow %s in term %d", w.State.Leader, w.State.Term)
+				return
+			}
 		case <-time.After(HeartbeatWaitLimit * time.Second):
 			log.Printf("no heartbeat")
 			w.State.State = peer.Candidate
@@ -116,8 +169,13 @@ func follower(w *peer.Worker) {
 }
 
 func candidate(w *peer.Worker) {
+	currentTerm := w.State.Term
 	w.State.Term += 1
 	nodeNum := 1
+
+	w.LockMutex()
+	w.State.Voted[w.State.Term] = true
+	w.UnlockMutex()
 	approvalCounter := struct {
 		sync.Mutex
 		counter int
@@ -127,7 +185,8 @@ func candidate(w *peer.Worker) {
 	}
 
 	for dest, _ := range w.ConnectedPeers() {
-		go func() {
+		go func(dest string) {
+			log.Printf("request %s to vote in term %d", dest, currentTerm)
 			var reply peer.RequestVoteReply
 			err := w.RemoteCall(dest, "Worker.RequestVote",
 				peer.RequestVoteArgs{From: w.Name(), Term: w.State.Term}, &reply)
@@ -138,21 +197,49 @@ func candidate(w *peer.Worker) {
 				approvalCounter.Lock()
 				approvalCounter.counter += 1
 				approvalCounter.Unlock()
+				log.Printf("voted by %s in term %d", dest, currentTerm)
 			}
-		}()
+		}(dest)
 		nodeNum += 1
 	}
 
-	select {
-	case <-time.After(VOTE_WAITLIMIT * time.Second):
-		approvalCounter.Lock()
+	voteWaitClock := time.After(VOTE_WAITLIMIT * time.Second)
 
-		if approvalCounter.counter*2 > nodeNum {
+	for {
+		empty := false
+		select {
+		// 自分より新しいLeaderが存在するならfollow
+		case m := <-w.Channels.Heartbeat:
+			if currentTerm <= m.Term {
+				w.LockMutex()
+				w.State.State = peer.Follower
+				w.State.Term = m.Term
+				w.State.Leader = m.From
+				w.UnlockMutex()
+				log.Printf("follow %s in term %d", w.State.Leader, w.State.Term)
+				return
+			}
+		default:
+			empty = true
+		}
+
+		if empty {
+			break
+		}
+	}
+
+	select {
+	case <-voteWaitClock:
+		approvalCounter.Lock()
+		w.LockMutex()
+
+		if approvalCounter.counter*2 > nodeNum && w.State.Term == currentTerm {
 			w.State.State = peer.Leader
-			log.Printf("leader in term %d", w.State.Term)
+			log.Printf("leader in term %d", currentTerm)
 		}
 
 		approvalCounter.Unlock()
+		w.UnlockMutex()
 	}
 
 	return
