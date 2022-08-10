@@ -5,7 +5,7 @@ peer=$1
 dispatcher=$2
 
 if [ ! -d log ]; then
-    mkdir log
+    mkdir -p log
 fi
 
 name=$(printf 'peer%02d' $peer)
