@@ -170,45 +170,6 @@ type RequestStateUpdateReply struct {
 	After  int
 }
 
-/*
-func (w *Worker) RequestStateUpdate(args RequestStateUpdateArgs, reply *RequestStateUpdateReply) error {
-	w.LockMutex()
-	for _, d := range w.State.Diffs {
-		if d.Id == args.Id {
-			return nil
-		}
-	}
-
-	reply.Before = CalcValue(&w.State)
-
-	switch args.Operator {
-	case "ADD":
-		w.State.Diffs = append(w.State.Diffs, WorkerValueDiff{Id: args.Id, PeerName: w.name, Operator: "ADD", Operand: args.Operand})
-	case "MUL":
-		w.State.Diffs = append(w.State.Diffs, WorkerValueDiff{Id: args.Id, PeerName: w.name, Operator: "MUL", Operand: args.Operand})
-	default:
-		reply.OK = false
-		return fmt.Errorf("unknown operator")
-	}
-
-	reply.After = CalcValue(&w.State)
-	reply.OK = true
-
-	w.UnlockMutex()
-
-	log.Printf("%#v\n", reply)
-
-	var r *RequestStateUpdateReply
-	peers := w.ConnectedPeers()
-	for peer := range peers {
-		log.Printf("connect %s from %s", peer, w.name)
-		w.RemoteCall(peer, "Worker.RequestStateUpdate", args, r)
-	}
-
-	return nil
-}
-*/
-
 func (w *Worker) RequestStateUpdate(args RequestStateUpdateArgs, reply *RequestStateUpdateReply) error {
 	w.LockMutex()
 	for _, d := range w.State.Diffs {
@@ -354,7 +315,6 @@ func (w *Worker) RequestVote(args RequestVoteArgs, reply *RequestVoteReply) erro
 		} else if currentTerm > args.Term {
 			log.Printf("refuse to vote %s in term %d (request is old: current term is %d)", args.From, args.Term, currentTerm)
 		}
-		// log.Printf("refuse to vote %s in term %d", args.From, args.Term)
 		return nil
 	}
 

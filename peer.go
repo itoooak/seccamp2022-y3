@@ -161,11 +161,9 @@ func follower(w *peer.Worker) {
 		return
 	}
 
-	// TODO: following状態をログで出力
 	if !w.State.Voted[currentTerm] {
 		for w.State.Term == currentTerm && w.State.Leader == currentLeader {
 			select {
-			// TODO: この中のロジックが間違っていそう
 			case m := <-w.Channels.Heartbeat:
 				if currentTerm == m.Term && currentLeader == m.From {
 					log.Printf("following %s in term %d", currentLeader, currentTerm)
