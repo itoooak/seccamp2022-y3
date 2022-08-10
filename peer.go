@@ -84,7 +84,7 @@ func leader(w *peer.Worker) {
 		err := w.RemoteCall(dest, "Worker.RequestHeartbeat",
 			peer.RequestHeartbeatArgs{From: w.Name(), Term: w.State.Term}, &reply)
 		if err != nil {
-			log.Fatal(err)
+			log.Printf("%s (%s)", err.Error(), dest)
 		}
 	}
 
@@ -109,7 +109,7 @@ func leader(w *peer.Worker) {
 				err := w.RemoteCall(dest, "Worker.RequestHeartbeat",
 					peer.RequestHeartbeatArgs{From: w.Name(), Term: w.State.Term}, &reply)
 				if err != nil {
-					log.Fatal(err)
+					log.Printf("%s (%s)", err.Error(), dest)
 				}
 			}
 		}
@@ -129,6 +129,8 @@ func follower(w *peer.Worker) {
 
 	if w.State.Voted[currentTerm] {
 		for w.State.Term == currentTerm && w.State.Leader == currentLeader {
+			leaderSelectionWaitLimit := HeartbeatWaitLimit + VOTE_WAITLIMIT * time.Second
+			leaderSelectionWaitClock := time.After(leaderSelectionWaitLimit)
 			select {
 			case m := <-w.Channels.Heartbeat:
 				if w.State.Term < m.Term {
@@ -144,30 +146,42 @@ func follower(w *peer.Worker) {
 					w.UnlockMutex()
 					log.Printf("follow %s in term %d", w.State.Leader, w.State.Term)
 					return
+				} else if m.From == currentLeader && m.Term == currentTerm {
+					log.Printf("following %s in term %d", currentLeader, currentTerm)
 				}
+			case <-leaderSelectionWaitClock:
+				log.Printf("no heartbeat")
+				w.LockMutex()
+				defer w.UnlockMutex()
+				w.State.State = peer.Candidate
+				return
 			}
 		}
 		return
 	}
 
-	for !w.State.Voted[currentTerm] {
-		select {
-		// TODO: この中のロジックが間違っていそう
-		case m := <-w.Channels.Heartbeat:
-			if w.State.Term == m.Term {
-				break
-			} else if w.State.Term < m.Term {
-				w.LockMutex()
-				w.State.Term = m.Term
-				w.State.Leader = m.From
-				w.UnlockMutex()
-				log.Printf("follow %s in term %d", w.State.Leader, w.State.Term)
+	// TODO: following状態をログで出力
+	if !w.State.Voted[currentTerm] {
+		for w.State.Term == currentTerm && w.State.Leader == currentLeader {
+			select {
+			// TODO: この中のロジックが間違っていそう
+			case m := <-w.Channels.Heartbeat:
+				if currentTerm == m.Term && currentLeader == m.From {
+					log.Printf("following %s in term %d", currentLeader, currentTerm)
+					break
+				} else if currentLeader != m.From || currentTerm < m.Term {
+					w.LockMutex()
+					w.State.Term = m.Term
+					w.State.Leader = m.From
+					w.UnlockMutex()
+					log.Printf("follow %s in term %d", w.State.Leader, w.State.Term)
+					return
+				}
+			case <-time.After(HeartbeatWaitLimit * time.Second):
+				log.Printf("no heartbeat")
+				w.State.State = peer.Candidate
 				return
 			}
-		case <-time.After(HeartbeatWaitLimit * time.Second):
-			log.Printf("no heartbeat")
-			w.State.State = peer.Candidate
-			return
 		}
 	}
 }
@@ -177,6 +191,7 @@ func candidate(w *peer.Worker) {
 	w.State.Term += 1
 	currentTerm := w.State.Term
 	w.State.Voted[currentTerm] = true
+	w.State.Leader = w.Name()
 	log.Printf("vote %s in term %d", w.Name(), currentTerm)
 	w.UnlockMutex()
 
@@ -196,7 +211,7 @@ func candidate(w *peer.Worker) {
 			err := w.RemoteCall(dest, "Worker.RequestVote",
 				peer.RequestVoteArgs{From: w.Name(), Term: currentTerm}, &reply)
 			if err != nil {
-				log.Fatal(err)
+				log.Print(err)
 			}
 			if reply.Message.Approve {
 				approvalCounter.Lock()
