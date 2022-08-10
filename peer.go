@@ -92,7 +92,7 @@ func leader(w *peer.Worker) {
 		heartbeatClock := time.After(HEARTBEAT_INTERVAL * time.Second)
 		select {
 		case m := <-w.Channels.Heartbeat:
-			if w.State.Term < m.Term {
+			if currentTerm < m.Term {
 				w.LockMutex()
 				w.State.State = peer.Follower
 				w.State.Leader = m.From
@@ -114,6 +114,10 @@ func leader(w *peer.Worker) {
 			}
 		}
 	}
+
+	w.LockMutex()
+	defer w.UnlockMutex()
+	log.Printf("follow %s in term %d", w.State.Leader, w.State.Term)
 }
 
 func follower(w *peer.Worker) {
