@@ -169,13 +169,14 @@ func follower(w *peer.Worker) {
 }
 
 func candidate(w *peer.Worker) {
-	currentTerm := w.State.Term
-	w.State.Term += 1
-	nodeNum := 1
-
 	w.LockMutex()
-	w.State.Voted[w.State.Term] = true
+	w.State.Term += 1
+	currentTerm := w.State.Term
+	w.State.Voted[currentTerm] = true
+	log.Printf("vote %s in term %d", w.Name(), currentTerm)
 	w.UnlockMutex()
+
+	nodeNum := 1
 	approvalCounter := struct {
 		sync.Mutex
 		counter int
@@ -238,6 +239,7 @@ func candidate(w *peer.Worker) {
 
 		if approvalCounter.counter*2 > nodeNum && w.State.Term == currentTerm {
 			w.State.State = peer.Leader
+			log.Printf("accepted (%d / %d)", approvalCounter.counter, nodeNum)
 			log.Printf("leader in term %d", currentTerm)
 		}
 

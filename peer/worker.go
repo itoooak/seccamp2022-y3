@@ -341,13 +341,20 @@ type RequestVoteReply struct {
 }
 
 func (w *Worker) RequestVote(args RequestVoteArgs, reply *RequestVoteReply) error {
+	log.Printf("requested to vote by %s in term %d", args.From, args.Term)
 	w.LockMutex()
 	currentTerm := w.State.Term
-	voted := w.State.Voted[currentTerm]
+	voted := w.State.Voted[args.Term]
 	w.UnlockMutex()
 
 	if voted || currentTerm > args.Term {
-		reply = &RequestVoteReply{VoteMessage{Approve: false, From: w.name, To: args.From, Term: args.Term}}
+		*reply = RequestVoteReply{VoteMessage{Approve: false, From: w.name, To: args.From, Term: args.Term}}
+		if voted {
+			log.Printf("refuse to vote %s in term %d (already voted)", args.From, args.Term)
+		} else if currentTerm > args.Term {
+			log.Printf("refuse to vote %s in term %d (request is old: current term is %d)", args.From, args.Term, currentTerm)
+		}
+		// log.Printf("refuse to vote %s in term %d", args.From, args.Term)
 		return nil
 	}
 
@@ -359,6 +366,6 @@ func (w *Worker) RequestVote(args RequestVoteArgs, reply *RequestVoteReply) erro
 	w.State.Voted[args.Term] = true
 	w.UnlockMutex()
 
-	reply = &RequestVoteReply{VoteMessage{Approve: true, From: w.name, To: args.From, Term: args.Term}}
+	*reply = RequestVoteReply{VoteMessage{Approve: true, From: w.name, To: args.From, Term: args.Term}}
 	return nil
 }
