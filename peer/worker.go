@@ -96,6 +96,16 @@ func (w *Worker) Connect(name, addr string) (err error) {
 	return nil
 }
 
+func (w *Worker) Disconnect(name string) (err error) {
+	w.LockMutex()
+	defer w.UnlockMutex()
+	err = w.node.Disconnect(name)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 func (w *Worker) Stop() {
 	w.node.Shutdown()
 	w.node = nil

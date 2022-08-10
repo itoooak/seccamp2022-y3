@@ -86,6 +86,7 @@ func leader(w *peer.Worker) {
 			peer.RequestHeartbeatArgs{From: w.Name(), Term: w.State.Term}, &reply)
 		if err != nil {
 			log.Printf("%s (%s)", err.Error(), dest)
+			w.Disconnect(dest)
 		}
 	}
 
@@ -111,6 +112,7 @@ func leader(w *peer.Worker) {
 					peer.RequestHeartbeatArgs{From: w.Name(), Term: w.State.Term}, &reply)
 				if err != nil {
 					log.Printf("%s (%s)", err.Error(), dest)
+					w.Disconnect(dest)
 				}
 			}
 		}
@@ -185,6 +187,18 @@ func follower(w *peer.Worker) {
 	}
 }
 
+type counter struct {
+	sync.Mutex
+	counter int
+}
+
+func newCounter() counter {
+	return counter{
+		Mutex:   sync.Mutex{},
+		counter: 1,
+	}
+}
+
 func candidate(w *peer.Worker) {
 	w.LockMutex()
 	w.State.Term += 1
@@ -194,14 +208,8 @@ func candidate(w *peer.Worker) {
 	log.Printf("vote %s in term %d", w.Name(), currentTerm)
 	w.UnlockMutex()
 
-	nodeNum := 1
-	approvalCounter := struct {
-		sync.Mutex
-		counter int
-	}{
-		Mutex:   sync.Mutex{},
-		counter: 1,
-	}
+	nodeNum := newCounter()
+	approvalCounter := newCounter()
 
 	for dest, _ := range w.ConnectedPeers() {
 		go func(dest string) {
@@ -210,7 +218,12 @@ func candidate(w *peer.Worker) {
 			err := w.RemoteCall(dest, "Worker.RequestVote",
 				peer.RequestVoteArgs{From: w.Name(), Term: currentTerm}, &reply)
 			if err != nil {
-				log.Print(err)
+				log.Printf("%s (%s)", err.Error(), dest)
+				w.Disconnect(dest)
+			} else {
+				nodeNum.Lock()
+				nodeNum.counter += 1
+				nodeNum.Unlock()
 			}
 			if reply.Message.Approve {
 				approvalCounter.Lock()
@@ -222,7 +235,6 @@ func candidate(w *peer.Worker) {
 			}
 			log.Printf("%#v", reply)
 		}(dest)
-		nodeNum += 1
 	}
 
 	voteWaitClock := time.After(VOTE_WAITLIMIT * time.Millisecond)
@@ -255,9 +267,9 @@ func candidate(w *peer.Worker) {
 		approvalCounter.Lock()
 		w.LockMutex()
 
-		if approvalCounter.counter*2 > nodeNum && w.State.Term == currentTerm {
+		if approvalCounter.counter*2 > nodeNum.counter && w.State.Term == currentTerm {
 			w.State.State = peer.Leader
-			log.Printf("accepted (%d / %d)", approvalCounter.counter, nodeNum)
+			log.Printf("accepted (%d / %d)", approvalCounter.counter, nodeNum.counter)
 			log.Printf("leader in term %d", currentTerm)
 		}
 
