@@ -79,16 +79,7 @@ func main() {
 func leader(w *peer.Worker) {
 	currentTerm := w.State.Term
 	// 最初にHeartbeat
-	log.Printf("heartbeat in term %d", currentTerm)
-	for dest, _ := range w.ConnectedPeers() {
-		var reply peer.RequestHeartbeatReply
-		err := w.RemoteCall(dest, "Worker.RequestHeartbeat",
-			peer.RequestHeartbeatArgs{From: w.Name(), Term: w.State.Term}, &reply)
-		if err != nil {
-			log.Printf("%s (%s)", err.Error(), dest)
-			w.Disconnect(dest)
-		}
-	}
+	heartbeat(w, currentTerm)
 
 	for w.State.State == peer.Leader {
 		heartbeatClock := time.After(HEARTBEAT_INTERVAL * time.Millisecond)
@@ -105,22 +96,26 @@ func leader(w *peer.Worker) {
 				return
 			}
 		case <-heartbeatClock:
-			log.Printf("heartbeat in term %d", currentTerm)
-			for dest, _ := range w.ConnectedPeers() {
-				var reply peer.RequestHeartbeatReply
-				err := w.RemoteCall(dest, "Worker.RequestHeartbeat",
-					peer.RequestHeartbeatArgs{From: w.Name(), Term: w.State.Term}, &reply)
-				if err != nil {
-					log.Printf("%s (%s)", err.Error(), dest)
-					w.Disconnect(dest)
-				}
-			}
+			heartbeat(w, currentTerm)
 		}
 	}
 
 	w.LockMutex()
 	defer w.UnlockMutex()
 	log.Printf("follow %s in term %d", w.State.Leader, w.State.Term)
+}
+
+func heartbeat(w *peer.Worker, currentTerm uint) {
+	log.Printf("heartbeat in term %d", currentTerm)
+	for dest, _ := range w.ConnectedPeers() {
+		var reply peer.RequestHeartbeatReply
+		err := w.RemoteCall(dest, "Worker.RequestHeartbeat",
+			peer.RequestHeartbeatArgs{From: w.Name(), Term: w.State.Term}, &reply)
+		if err != nil {
+			log.Printf("%s (%s)", err.Error(), dest)
+			w.Disconnect(dest)
+		}
+	}
 }
 
 func follower(w *peer.Worker) {
