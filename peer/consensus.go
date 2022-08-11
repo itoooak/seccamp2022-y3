@@ -27,6 +27,13 @@ type WorkerState struct {
 	Term   uint
 	State  NodeState
 	Voted  map[uint]bool
+	commitIndex uint
+
+	// leaderのみ使用
+	// nextIndex: 各followerが次に受け取る(はずである)index
+	nextIndex map[string]uint
+	// matchIndex
+	matchIndex map[string]uint
 }
 
 func InitState(w *Worker) WorkerState {
@@ -36,6 +43,8 @@ func InitState(w *Worker) WorkerState {
 		Term:   0,
 		State:  Follower,
 		Voted:  map[uint]bool{},
+		nextIndex: make(map[string]uint),
+		matchIndex: make(map[string]uint),
 	}
 }
 
@@ -48,7 +57,10 @@ func InitChannels(w *Worker) ConnChannels {
 
 func CalcValue(s *WorkerState) int {
 	value := 0
-	for _, d := range s.Diffs {
+	for i, d := range s.Diffs {
+		if i > int(s.commitIndex) {
+			break
+		}
 		switch d.Operator {
 		case "ADD":
 			value += d.Operand

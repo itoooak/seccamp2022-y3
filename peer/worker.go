@@ -22,6 +22,7 @@ type Worker struct {
 type ConnChannels struct {
 	Heartbeat chan HeartbeatMessage
 	Vote      chan VoteMessage
+	Update chan UpdatingMessage
 }
 
 type HeartbeatMessage struct {
@@ -35,6 +36,16 @@ type VoteMessage struct {
 	From    string
 	To      string
 	Term    uint
+}
+
+type UpdatingMessage struct {
+	DiffEntries []WorkerValueDiff
+	prevLogIndex uint
+	leaderCommit uint
+
+	// OK chan<- bool
+	From string
+	Term uint
 }
 
 type WorkerOption func(*Worker)
@@ -103,6 +114,8 @@ func (w *Worker) Disconnect(name string) (err error) {
 	if err != nil {
 		return err
 	}
+	delete(w.State.matchIndex, name)
+	delete(w.State.nextIndex, name)
 	return nil
 }
 
@@ -207,22 +220,120 @@ func (w *Worker) RequestStateUpdate(args RequestStateUpdateArgs, reply *RequestS
 
 	log.Printf("%#v\n", reply)
 
-	var wg sync.WaitGroup
-	peers := w.ConnectedPeers()
-	for peer := range peers {
-		log.Printf("connect %s", peer)
-		wg.Add(1)
-		go func(peer string) {
-			var r RequestStateUpdateReply
-			err := w.RemoteCall(peer, "Worker.RequestStateUpdateWithoutSync", args, &r)
-			if err != nil {
-				log.Fatalf("failed to call %s: %s", peer, err.Error())
-				log.Fatal(err)
+	if w.State.State == Leader {
+		// var wg sync.WaitGroup
+		peers := w.ConnectedPeers()
+
+		for peer := range peers {
+			log.Printf("connect %s: request update", peer)
+			// wg.Add(1)
+			go func(peer string) {
+				ok, err := w.sendUpdatingMessageToFollower(peer)
+				for !ok {
+					if err != nil {
+						log.Printf("failed to send updating message to %s", peer)
+						w.Disconnect(peer)
+						// wg.Done()
+						return
+					}
+
+					w.LockMutex()
+					w.State.nextIndex[peer] -= 1
+					w.UnlockMutex()
+					w.sendUpdatingMessageToFollower(peer)
+				}
+
+				w.LockMutex()
+				w.State.nextIndex[peer] = uint(len(w.State.Diffs))
+				w.State.matchIndex[peer] = uint(len(w.State.Diffs) - 1)
+				w.UnlockMutex()
+				// wg.Done()
+			}(peer)
+		}
+		// wg.Wait()
+
+		for k := uint(len(w.State.Diffs) - 1); k >= w.State.commitIndex; k-- {
+			nodeNum := 1
+			updatedNum := 1
+			for peer := range w.ConnectedPeers() {
+				nodeNum += 1
+				if w.State.matchIndex[peer] >= k {
+					updatedNum += 1
+				}
 			}
-			wg.Done()
-		}(peer)
+
+			if updatedNum*2 > nodeNum {
+				w.LockMutex()
+				w.State.commitIndex = k
+				w.UnlockMutex()
+				return nil
+			}
+		}
+	} else if w.State.State == Follower {
+		leader := w.State.Leader
+		var r RequestStateUpdateReply
+		log.Printf("connect %s (leader): request update", leader)
+		err := w.RemoteCall(leader, "Worker.RequestStateUpdate", args, &r)
+		if err != nil {
+			log.Printf("failed to call %s: %s", leader, err.Error())
+			return err
+		}
 	}
-	wg.Wait()
+
+	return nil
+}
+
+func (w *Worker) sendUpdatingMessageToFollower(name string) (bool, error) {
+	var reply RequestReceiveUpdatingMessageReply
+	w.LockMutex()
+	msg := UpdatingMessage{
+		DiffEntries: w.State.Diffs[w.State.nextIndex[name]:],
+		prevLogIndex: w.State.nextIndex[name] - 1,
+		leaderCommit: w.State.commitIndex,
+		From: w.name,
+		Term: w.State.Term,
+	}
+	w.UnlockMutex()
+
+	err := w.RemoteCall(name, "Worker.RequestReceiveUpdatingMessage", RequestReceiveUpdatingMessageArgs{ msg: msg }, &reply)
+	if err != nil {
+		log.Printf("failed in (*Worker).sendUpdatingMessageToFollower")
+		return false, err
+	}
+
+	return reply.OK, nil
+}
+
+type RequestReceiveUpdatingMessageArgs struct {
+	msg UpdatingMessage
+}
+
+type RequestReceiveUpdatingMessageReply struct {
+	OK bool
+}
+
+func (w *Worker) RequestReceiveUpdatingMessage(args RequestReceiveUpdatingMessageArgs, reply *RequestReceiveUpdatingMessageReply) (err error) {
+	w.LockMutex()
+	defer w.UnlockMutex()
+
+	w.Channels.Heartbeat <- HeartbeatMessage{ From: args.msg.From, To: w.name, Term: args.msg.Term }
+
+	if w.State.commitIndex < args.msg.prevLogIndex {
+		reply.OK = false
+		return
+	}
+
+	w.State.Diffs = append(w.State.Diffs[:args.msg.prevLogIndex + 1], args.msg.DiffEntries...)
+	if args.msg.leaderCommit > w.State.commitIndex {
+		// leaderCommitが1以上であり、Diffsも1以上の長さを持つ
+		if args.msg.leaderCommit < uint(len(w.State.Diffs) - 1) {
+			w.State.commitIndex = args.msg.leaderCommit
+		} else {
+			w.State.commitIndex = uint(len(w.State.Diffs) - 1)
+		}
+	}
+
+	reply.OK = true
 
 	return nil
 }
