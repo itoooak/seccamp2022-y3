@@ -207,15 +207,16 @@ func (w *Worker) RequestStateUpdate(args RequestStateUpdateArgs, reply *RequestS
 
 	log.Printf("%#v\n", reply)
 
-	var r *RequestStateUpdateReply
 	var wg sync.WaitGroup
 	peers := w.ConnectedPeers()
 	for peer := range peers {
 		log.Printf("connect %s", peer)
 		wg.Add(1)
 		go func(peer string) {
-			err := w.RemoteCall(peer, "Worker.RequestStateUpdateWithoutSync", args, r)
+			var r RequestStateUpdateReply
+			err := w.RemoteCall(peer, "Worker.RequestStateUpdateWithoutSync", args, &r)
 			if err != nil {
+				log.Fatalf("failed to call %s: %s", peer, err.Error())
 				log.Fatal(err)
 			}
 			wg.Done()
