@@ -27,6 +27,7 @@ type WorkerState struct {
 	Term   uint
 	State  NodeState
 	Voted  map[uint]bool
+	// Diffs[commitIndex]まではログの合意がとれている
 	commitIndex uint
 
 	// leaderのみ使用
@@ -38,13 +39,20 @@ type WorkerState struct {
 
 func InitState(w *Worker) WorkerState {
 	return WorkerState{
-		Diffs:  []WorkerValueDiff{},
-		Leader: w.name,
-		Term:   0,
-		State:  Follower,
-		Voted:  map[uint]bool{},
-		nextIndex: make(map[string]uint),
-		matchIndex: make(map[string]uint),
+		Diffs: []WorkerValueDiff{
+			{
+				Id:       ulid.Make(),
+				Operator: StateUpdateOperator(Add),
+				Operand:  0,
+			},
+		},
+		Leader:      w.name,
+		Term:        0,
+		State:       Follower,
+		Voted:       map[uint]bool{},
+		commitIndex: 0,
+		nextIndex:   make(map[string]uint),
+		matchIndex:  make(map[string]uint),
 	}
 }
 
