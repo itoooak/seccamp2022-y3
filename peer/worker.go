@@ -207,7 +207,7 @@ func (w *Worker) RequestStateUpdate(args RequestStateUpdateArgs, reply *RequestS
 
 	reply.Before = CalcValue(&w.State)
 
-	if w.State.State == Leader {
+	// if w.State.State == Leader {
 		switch args.Operator {
 		case "ADD":
 			w.State.Diffs = append(w.State.Diffs, WorkerValueDiff{Id: args.Id, Operator: "ADD", Operand: args.Operand})
@@ -217,7 +217,7 @@ func (w *Worker) RequestStateUpdate(args RequestStateUpdateArgs, reply *RequestS
 			reply.OK = false
 			return fmt.Errorf("unknown operator")
 		}
-	}
+	// }
 
 	reply.After = CalcValue(&w.State)
 	reply.OK = true
@@ -233,7 +233,6 @@ func (w *Worker) RequestStateUpdate(args RequestStateUpdateArgs, reply *RequestS
 		for peer := range peers {
 			wg.Add(1)
 			go func(peer string) {
-				log.Printf("connect %s: request update", peer)
 				ok, err := w.sendUpdatingMessageToFollower(peer)
 				for !ok {
 					if err != nil {
@@ -269,10 +268,18 @@ func (w *Worker) RequestStateUpdate(args RequestStateUpdateArgs, reply *RequestS
 			}
 
 			if updatedNum*2 > nodeNum {
+				log.Printf("commitIndex: %d -> %d (%d / %d)", w.State.commitIndex, k, updatedNum, nodeNum)
 				w.LockMutex()
 				w.State.commitIndex = k
 				w.UnlockMutex()
+
+				for peer := range w.ConnectedPeers(){
+					w.sendUpdatingMessageToFollower(peer)
+				}
+
 				return nil
+			} else {
+				log.Printf("change is not accepted (%d / %d)", updatedNum, nodeNum)
 			}
 		}
 	} else if w.State.State == Follower {
@@ -290,6 +297,7 @@ func (w *Worker) RequestStateUpdate(args RequestStateUpdateArgs, reply *RequestS
 }
 
 func (w *Worker) sendUpdatingMessageToFollower(name string) (bool, error) {
+	log.Printf("connect %s: request update", name)
 	var reply RequestReceiveUpdatingMessageReply
 	w.LockMutex()
 	msg := UpdatingMessage{
@@ -332,13 +340,18 @@ func (w *Worker) RequestReceiveUpdatingMessage(args RequestReceiveUpdatingMessag
 	}
 
 	w.State.Diffs = append(w.State.Diffs[:args.Msg.prevLogIndex+1], args.Msg.DiffEntries...)
-	if args.Msg.leaderCommit > w.State.commitIndex {
+	log.Printf("after: %#v", w.State.Diffs)
+	log.Printf("leader commit index: %d", args.Msg.leaderCommit)
+	log.Printf("commit index: %d", w.State.commitIndex)
+	if w.State.commitIndex < args.Msg.leaderCommit {
+		prevCommitIndex := w.State.commitIndex
 		// leaderCommitが1以上であり、Diffsも1以上の長さを持つ
 		if args.Msg.leaderCommit < uint(len(w.State.Diffs)-1) {
 			w.State.commitIndex = args.Msg.leaderCommit
 		} else {
 			w.State.commitIndex = uint(len(w.State.Diffs) - 1)
 		}
+		log.Printf("commit index: %d -> %d", prevCommitIndex, w.State.commitIndex)
 	}
 
 	reply.OK = true
