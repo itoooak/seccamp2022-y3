@@ -241,7 +241,7 @@ func (w *Worker) RequestStateUpdate(args RequestStateUpdateArgs, reply *RequestS
 	return nil
 }
 
-func (w *Worker) sendUpdatingMessageToFollower(name string) (bool, error) {
+func (w *Worker) SendUpdatingMessageToFollower(name string) (bool, error) {
 	log.Printf("connect %s: request update", name)
 	var reply RequestReceiveUpdatingMessageReply
 	w.LockMutex()
@@ -256,9 +256,9 @@ func (w *Worker) sendUpdatingMessageToFollower(name string) (bool, error) {
 
 	args := RequestReceiveUpdatingMessageArgs{Msg: msg}
 	err := w.RemoteCall(name, "Worker.RequestReceiveUpdatingMessage", args, &reply)
-	log.Printf("%#v", args)
+	// log.Printf("%#v", args)
 	if err != nil {
-		log.Printf("failed in (*Worker).sendUpdatingMessageToFollower: %s", err.Error())
+		log.Printf("failed in (*Worker).SendUpdatingMessageToFollower: %s", err.Error())
 		return false, err
 	}
 
@@ -281,7 +281,7 @@ func (w *Worker) RequestReceiveUpdatingMessage(args RequestReceiveUpdatingMessag
 	w.LockMutex()
 	defer w.UnlockMutex()
 
-	log.Printf("requested to update by %s: %#v", args.Msg.From, args.Msg)
+	// log.Printf("requested to update by %s: %#v", args.Msg.From, args.Msg)
 
 	w.Channels.Heartbeat <- HeartbeatMessage{From: args.Msg.From, To: w.name, Term: args.Msg.Term}
 
@@ -294,11 +294,13 @@ func (w *Worker) RequestReceiveUpdatingMessage(args RequestReceiveUpdatingMessag
 	// ここのデータ更新方法・タイミングがおかしいために更新がかかっていない気がする
 	// CommitIndexを更新するためにupdateを掛けたらそれまでの記録が落ちてしまっているような気がする
 
-	// w.LockMutex()
-	log.Printf("before: %#v", w.State.Diffs)
-	w.State.Diffs = append(w.State.Diffs[:args.Msg.PrevLogIndex+1], args.Msg.DiffEntries...)
-	log.Printf("after: %#v", w.State.Diffs)
-	// w.UnlockMutex()
+	if args.Msg.DiffEntries != nil {
+		// w.LockMutex()
+		log.Printf("before: %#v", w.State.Diffs)
+		w.State.Diffs = append(w.State.Diffs[:args.Msg.PrevLogIndex+1], args.Msg.DiffEntries...)
+		log.Printf("after: %#v", w.State.Diffs)
+		// w.UnlockMutex()
+	}
 
 	log.Printf("leader commit index: %d", args.Msg.LeaderCommit)
 	log.Printf("commit index: %d", w.State.CommitIndex)
@@ -325,7 +327,7 @@ func leaderUpdate(w *Worker) (bool, error) {
 	for peer := range peers {
 		wg.Add(1)
 		go func(peer string) {
-			ok, err := w.sendUpdatingMessageToFollower(peer)
+			ok, err := w.SendUpdatingMessageToFollower(peer)
 			for !ok {
 				if err != nil {
 					log.Printf("failed to send updating message to %s", peer)
@@ -337,7 +339,7 @@ func leaderUpdate(w *Worker) (bool, error) {
 				w.LockMutex()
 				w.State.nextIndex[peer] -= 1
 				w.UnlockMutex()
-				ok, err = w.sendUpdatingMessageToFollower(peer)
+				ok, err = w.SendUpdatingMessageToFollower(peer)
 			}
 
 			if ok {
@@ -368,7 +370,7 @@ func leaderUpdate(w *Worker) (bool, error) {
 			w.UnlockMutex()
 
 			for peer := range w.ConnectedPeers() {
-				w.sendUpdatingMessageToFollower(peer)
+				w.SendUpdatingMessageToFollower(peer)
 			}
 
 			return true, nil

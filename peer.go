@@ -108,13 +108,7 @@ func leader(w *peer.Worker) {
 func heartbeat(w *peer.Worker, currentTerm uint) {
 	log.Printf("heartbeat in term %d", currentTerm)
 	for dest, _ := range w.ConnectedPeers() {
-		var reply peer.RequestHeartbeatReply
-		err := w.RemoteCall(dest, "Worker.RequestHeartbeat",
-			peer.RequestHeartbeatArgs{From: w.Name(), Term: w.State.Term}, &reply)
-		if err != nil {
-			log.Printf("%s (%s)", err.Error(), dest)
-			w.Disconnect(dest)
-		}
+		w.SendUpdatingMessageToFollower(dest)
 	}
 }
 
@@ -228,7 +222,7 @@ func candidate(w *peer.Worker) {
 			} else {
 				log.Printf("refused by %s in term %d", dest, currentTerm)
 			}
-			log.Printf("%#v", reply)
+			// log.Printf("%#v", reply)
 		}(dest)
 	}
 
