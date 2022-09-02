@@ -27,8 +27,8 @@ type WorkerState struct {
 	Term   uint
 	State  NodeState
 	Voted  map[uint]bool
-	// Diffs[commitIndex]まではログの合意がとれている
-	commitIndex uint
+	// Diffs[CommitIndex]まではログの合意がとれている
+	CommitIndex uint
 
 	// leaderのみ使用
 	// nextIndex: 各followerが次に受け取る(はずである)index
@@ -50,7 +50,7 @@ func InitState(w *Worker) WorkerState {
 		Term:        0,
 		State:       Follower,
 		Voted:       map[uint]bool{},
-		commitIndex: 0,
+		CommitIndex: 0,
 		nextIndex:   make(map[string]uint),
 		matchIndex:  make(map[string]uint),
 	}
@@ -66,7 +66,7 @@ func InitChannels(w *Worker) ConnChannels {
 func CalcValue(s *WorkerState) int {
 	value := 0
 	for i, d := range s.Diffs {
-		if i > int(s.commitIndex) {
+		if i > int(s.CommitIndex) {
 			break
 		}
 		switch d.Operator {
@@ -95,6 +95,7 @@ func (w *Worker) RequestState(args RequestStateArgs, reply *RequestStateReply) e
 	w.UnlockMutex()
 
 	log.Println(reply.State.String())
+	// log.Printf("%#v", reply)
 
 	return nil
 }

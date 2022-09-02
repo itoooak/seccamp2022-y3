@@ -96,6 +96,9 @@ func (c *Command) Exec() (string, error) {
 func State(name string) (string, error) {
 	var reply peer.RequestStateReply
 	err := send_rpc(name, "Worker.RequestState", peer.RequestStateArgs{}, &reply)
+
+	// log.Printf("%#v", reply)
+
 	if err != nil {
 		return "", err
 	}
@@ -123,7 +126,12 @@ func StateUpdate(name string, operator string, operand string) (string, error) {
 	if err2 != nil {
 		return "", err2
 	}
-	return fmt.Sprintf("%s: %#v -> %#v", name, reply.Before, reply.After), nil
+
+	if reply.OK {
+		return fmt.Sprintf("%s: %#v -> %#v", name, reply.Before, reply.After), nil
+	} else {
+		return "update failed", nil
+	}
 }
 
 func ListDiff(name string) (string, error) {
