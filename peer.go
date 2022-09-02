@@ -15,9 +15,9 @@ import (
 
 const (
 	// Millisecond
-	HEARTBEAT_INTERVAL       = 1000
-	HEARTBEAT_WAITLIMIT_BASE = 5000
-	VOTE_WAITLIMIT           = 5000
+	HEARTBEAT_INTERVAL       = 100
+	HEARTBEAT_WAITLIMIT_BASE = 500
+	VOTE_WAITLIMIT           = 500
 )
 
 func main() {

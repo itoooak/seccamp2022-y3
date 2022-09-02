@@ -290,10 +290,6 @@ func (w *Worker) RequestReceiveUpdatingMessage(args RequestReceiveUpdatingMessag
 		return
 	}
 
-	// TODO: ここのロジックを考え直す
-	// ここのデータ更新方法・タイミングがおかしいために更新がかかっていない気がする
-	// CommitIndexを更新するためにupdateを掛けたらそれまでの記録が落ちてしまっているような気がする
-
 	if args.Msg.DiffEntries != nil {
 		// w.LockMutex()
 		log.Printf("before: %#v", w.State.Diffs)
